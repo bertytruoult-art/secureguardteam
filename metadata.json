@@ -1,0 +1,6 @@
+{
+  "name": "Portail National de Lutte contre les Fraudes",
+  "description": "Plateforme officielle de signalement des arnaques et cybercriminalités pour investigations militaires, poursuites judiciaires et recouvrement de fonds.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
