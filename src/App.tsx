@@ -708,12 +708,6 @@ export default function App() {
     setIsSubmitting(true);
     setSubmitError(null);
 
-    if (!victimName || !scamCategory || !amount || !description) {
-      setSubmitError("Veuillez remplir tous les champs obligatoires marqués d'un astérisque (*).");
-      setIsSubmitting(false);
-      return;
-    }
-
     try {
       const response = await fetch("/api/reports", {
         method: "POST",
@@ -737,7 +731,15 @@ export default function App() {
         })
       });
 
-      const data = await response.json();
+      let data: any = {};
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(text || `Erreur serveur (Status: ${response.status})`);
+      }
+
       if (!response.ok) {
         throw new Error(data.error || "Une erreur est survenue lors du signalement.");
       }

