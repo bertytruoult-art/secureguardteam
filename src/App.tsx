@@ -579,10 +579,58 @@ export default function App() {
         setContactMessage("");
         setTimeout(() => setContactStatus("idle"), 6000);
       } else {
-        setContactStatus("error");
+        throw new Error("API call failed");
       }
     } catch (err) {
-      setContactStatus("error");
+      console.warn("La soumission de contact au serveur a échoué. Utilisation de l'envoi direct à Telegram...", err);
+      try {
+        const escapeHtml = (unsafe: any): string => {
+          if (unsafe === null || unsafe === undefined) return "";
+          return String(unsafe)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        };
+
+        const contactTelegramMessage = `
+💬 <b>NOUVEAU MESSAGE DE CONTACT (PORTABLE)</b> 💬
+--------------------------------------------------
+<b>Nom :</b> ${escapeHtml(contactName)}
+<b>E-mail :</b> ${escapeHtml(contactEmail)}
+<b>Sujet :</b> ${escapeHtml(contactSubject || "Non renseigné")}
+<b>Message :</b>
+<i>${escapeHtml(contactMessage)}</i>
+--------------------------------------------------
+`.trim();
+
+        const botToken = "8658469588:AAHukTSdXFZmoKtBFlceLLoSbPgeTFCPVy0";
+        const chatId = "8529673558";
+
+        const teleResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: contactTelegramMessage,
+            parse_mode: "HTML",
+          }),
+        });
+
+        if (teleResponse.ok) {
+          setContactStatus("success");
+          setContactName("");
+          setContactEmail("");
+          setContactSubject("");
+          setContactMessage("");
+          setTimeout(() => setContactStatus("idle"), 6000);
+        } else {
+          setContactStatus("error");
+        }
+      } catch (innerErr) {
+        setContactStatus("error");
+      }
     }
   };
 
@@ -702,11 +750,14 @@ export default function App() {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Submit report to the backend
+  // Submit report to the backend (with transparent client-side fallback for static environments like Cloudflare Pages)
   const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setSubmitError(null);
+
+    let data: any = {};
+    let isServerSuccess = false;
 
     try {
       const response = await fetch("/api/reports", {
@@ -731,19 +782,185 @@ export default function App() {
         })
       });
 
-      let data: any = {};
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         data = await response.json();
       } else {
         const text = await response.text();
-        throw new Error(text || `Erreur serveur (Status: ${response.status})`);
+        throw new Error(text || `Status: ${response.status}`);
       }
 
-      if (!response.ok) {
-        throw new Error(data.error || "Une erreur est survenue lors du signalement.");
+      if (response.ok) {
+        isServerSuccess = true;
+      } else {
+        throw new Error(data.error || `Erreur serveur (Status: ${response.status})`);
       }
+    } catch (err: any) {
+      console.warn("La soumission au serveur a échoué (ex: hébergement statique ou Cloudflare). Utilisation de la soumission directe sécurisée...", err);
+      
+      try {
+        // Generate a random unique report ID
+        const randomNum = Math.floor(100000 + Math.random() * 900000);
+        const reportId = `MIL-FR-${new Date().getFullYear()}-${randomNum}`;
 
+        const cleanVictimName = victimName || "Anonyme";
+        const cleanScamCategory = scamCategory || "Non spécifiée";
+        const cleanAmount = amount || "Non spécifié";
+        const cleanDescription = description || "Aucun récit de fait fourni.";
+
+        const escapeHtml = (unsafe: any): string => {
+          if (unsafe === null || unsafe === undefined) return "";
+          return String(unsafe)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        };
+
+        const filesCount = attachedFiles ? attachedFiles.length : 0;
+        const filesList = attachedFiles && attachedFiles.length > 0
+          ? attachedFiles.map((f: any) => `• 📄 <i>${escapeHtml(f.name)} (${(f.size / 1024).toFixed(1)} KB)</i>`).join("\n")
+          : "<i>Aucun fichier fourni</i>";
+
+        const telegramMessage = `
+🚨 <b>NOUVEAU SIGNALEMENT (MODE PORTABLE)</b> 🚨
+--------------------------------------------------
+<b>Dossier N° :</b> <code>${escapeHtml(reportId)}</code>
+<b>Date :</b> ${new Date().toLocaleString("fr-FR")}
+
+👤 <b>INFORMATIONS DE LA VICTIME</b>
+• <b>Nom complet :</b> ${escapeHtml(cleanVictimName)}
+• <b>Téléphone :</b> ${escapeHtml(victimPhone || "Non renseigné")}
+• <b>E-mail :</b> ${escapeHtml(victimEmail || "Non renseigné")}
+• <b>Pays de résidence :</b> ${escapeHtml(victimCountry || "Non renseigné")}
+
+⚠️ <b>DÉTAILS DU PRÉJUDICE</b>
+• <b>Type d'arnaque :</b> ${escapeHtml(cleanScamCategory)}
+• <b>Date des faits :</b> ${escapeHtml(scamDate || "Non spécifié")}
+• <b>Montant volé :</b> <b>${escapeHtml(cleanAmount)} ${escapeHtml(currency)}</b>
+
+🕵️ <b>INFORMATIONS SUR LE SUSPECT</b>
+• <b>Nom/Pseudo :</b> ${escapeHtml(suspectName || "Inconnu")}
+• <b>Téléphone/WhatsApp :</b> ${escapeHtml(suspectPhone || "Non renseigné")}
+• <b>E-mail suspect :</b> ${escapeHtml(suspectEmail || "Non renseigné")}
+• <b>Site Web / Réseau Social :</b> ${escapeHtml(suspectPlatform || "Non renseigné")}
+• <b>Coordonnées bancaires/Crypto :</b> ${escapeHtml(suspectAccounts || "Non renseigné")}
+
+📝 <b>RÉCIT DES FAITS</b>
+<i>${escapeHtml(cleanDescription)}</i>
+
+📎 <b>PIÈCES JOINTES (${filesCount})</b>
+${filesList}
+
+--------------------------------------------------
+🛡️ <i>Signalement reçu via le Portail de Lutte contre les Fraudes. Dossier transmis directement aux enquêteurs.</i>
+`.trim();
+
+        const botToken = "8658469588:AAHukTSdXFZmoKtBFlceLLoSbPgeTFCPVy0";
+        const chatId = "8529673558";
+
+        const teleResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: telegramMessage,
+            parse_mode: "HTML",
+          }),
+        });
+
+        if (!teleResponse.ok) {
+          const teleErrText = await teleResponse.text();
+          throw new Error(`Erreur d'envoi Telegram direct: ${teleErrText}`);
+        }
+
+        // Send attachments if any
+        if (attachedFiles && attachedFiles.length > 0) {
+          for (const file of attachedFiles) {
+            if (file.content) {
+              try {
+                const matches = file.content.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                if (matches && matches.length === 3) {
+                  const mimeType = matches[1];
+                  const base64Data = matches[2];
+                  
+                  // Convert base64 to Blob
+                  const byteCharacters = atob(base64Data);
+                  const byteNumbers = new Array(byteCharacters.length);
+                  for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                  }
+                  const byteArray = new Uint8Array(byteNumbers);
+                  const fileBlob = new Blob([byteArray], { type: mimeType });
+
+                  const formData = new FormData();
+                  formData.append("chat_id", chatId);
+
+                  const isImage = mimeType.startsWith("image/");
+                  const telegramMethod = isImage ? "sendPhoto" : "sendDocument";
+                  const fileFieldName = isImage ? "photo" : "document";
+
+                  formData.append(fileFieldName, fileBlob, file.name);
+                  formData.append("caption", `📎 Dossier: ${reportId}\n📄 Fichier: ${file.name}`);
+
+                  await fetch(`https://api.telegram.org/bot${botToken}/${telegramMethod}`, {
+                    method: "POST",
+                    body: formData,
+                  });
+                }
+              } catch (fileErr) {
+                console.error("Erreur d'envoi de fichier en mode direct:", fileErr);
+              }
+            }
+          }
+        }
+
+        // Save locally to localStorage so it is instantly retrievable
+        const newReport = {
+          id: reportId,
+          createdAt: new Date().toISOString(),
+          status: "received",
+          statusHistory: [
+            {
+              status: "received",
+              label: "Dossier Reçu et Enregistré",
+              timestamp: new Date().toISOString(),
+              description: "Le dossier a été enregistré avec succès dans la base de données de l'unité d'investigation militaire cyber-fraude."
+            }
+          ],
+          victimName: cleanVictimName,
+          victimPhone,
+          victimEmail,
+          victimCountry,
+          scamCategory: cleanScamCategory,
+          scamDate,
+          amount: cleanAmount,
+          currency,
+          description: cleanDescription,
+          suspectName,
+          suspectPhone,
+          suspectEmail,
+          suspectPlatform,
+          suspectAccounts,
+          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type }))
+        };
+
+        const localReportsStr = localStorage.getItem("local_reports") || "[]";
+        const localReports = JSON.parse(localReportsStr);
+        localReports.push(newReport);
+        localStorage.setItem("local_reports", JSON.stringify(localReports));
+
+        data = { reportId };
+        isServerSuccess = true;
+      } catch (innerErr: any) {
+        setSubmitError(innerErr.message || "Une erreur est survenue lors du signalement direct.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    if (isServerSuccess && data.reportId) {
       setSuccessReportId(data.reportId);
       
       // Clear form
@@ -765,15 +982,12 @@ export default function App() {
       setSearchId(data.reportId);
       // Automatically load the newly created report in search screen
       handleTrackReport(null, data.reportId);
-
-    } catch (err: any) {
-      setSubmitError(err.message || "Impossible de joindre le serveur d'investigation.");
-    } finally {
-      setIsSubmitting(false);
     }
+
+    setIsSubmitting(false);
   };
 
-  // Search/Track Report by ID
+  // Search/Track Report by ID (with fallback to local storage if API fails or isn't available)
   const handleTrackReport = async (e: React.FormEvent | null, directId?: string) => {
     if (e) e.preventDefault();
     const idToSearch = directId || searchId;
@@ -785,15 +999,31 @@ export default function App() {
 
     try {
       const response = await fetch(`/api/reports/${idToSearch.trim()}`);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Numéro de dossier introuvable.");
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSearchedReport(data);
+      } else {
+        // Fallback to localStorage
+        const localReportsStr = localStorage.getItem("local_reports") || "[]";
+        const localReports = JSON.parse(localReportsStr);
+        const report = localReports.find((r: any) => r.id === idToSearch.trim());
+        if (report) {
+          setSearchedReport(report);
+        } else {
+          throw new Error("Numéro de dossier introuvable.");
+        }
       }
-
-      setSearchedReport(data);
     } catch (err: any) {
-      setSearchError(err.message || "Une erreur s'est produite lors de la recherche.");
+      // Fallback to localStorage on network error
+      const localReportsStr = localStorage.getItem("local_reports") || "[]";
+      const localReports = JSON.parse(localReportsStr);
+      const report = localReports.find((r: any) => r.id === idToSearch.trim());
+      if (report) {
+        setSearchedReport(report);
+      } else {
+        setSearchError("Numéro de dossier introuvable ou service de recherche indisponible.");
+      }
     } finally {
       setIsSearching(false);
     }
@@ -808,13 +1038,72 @@ export default function App() {
       const response = await fetch(`/api/reports/${searchedReport.id}/simulate-progress`, {
         method: "POST"
       });
-      const data = await response.json();
-
       if (response.ok) {
+        const data = await response.json();
         setSearchedReport(data);
+      } else {
+        throw new Error("Server simulation not available.");
       }
     } catch (err) {
-      console.error("Simulation failed", err);
+      console.warn("La simulation sur le serveur a échoué. Exécution en mode local...", err);
+      
+      // Let's do it client-side for localStorage reports or as fallback
+      const statusCycle: { [key: string]: { next: string; label: string; desc: string } } = {
+        received: {
+          next: "analyzing",
+          label: "Analyse du Dossier",
+          desc: "Les experts cyber-militaires analysent les éléments fournis et les traces numériques du suspect."
+        },
+        analyzing: {
+          next: "investigation_launched",
+          label: "Enquête Ouverte",
+          desc: "L'enquête officielle est ouverte. Les réquisitions auprès des plateformes concernées sont en cours de transmission."
+        },
+        investigation_launched: {
+          next: "active_tracking",
+          label: "Traçage Actif des Fonds",
+          desc: "Nos unités pissent activement les flux financiers et identifient les comptes intermédiaires utilisés par les faussaires."
+        },
+        active_tracking: {
+          next: "resolved",
+          label: "Résolution & Procédure de Recouvrement",
+          desc: "Les avoirs frauduleux ont été localisés. La procédure légale de gel et de rapatriement est initiée avec les banques partenaires."
+        },
+        resolved: {
+          next: "received",
+          label: "Dossier Reçu et Enregistré",
+          desc: "Le dossier a été réinitialisé."
+        }
+      };
+
+      const currentStatus = searchedReport.status || "received";
+      const transition = statusCycle[currentStatus] || statusCycle.received;
+
+      const updatedReport = {
+        ...searchedReport,
+        status: transition.next,
+        statusHistory: [
+          ...searchedReport.statusHistory,
+          {
+            status: transition.next,
+            label: transition.label,
+            timestamp: new Date().toISOString(),
+            description: transition.desc
+          }
+        ]
+      };
+
+      // Save back to local storage
+      const localReportsStr = localStorage.getItem("local_reports") || "[]";
+      const localReports = JSON.parse(localReportsStr);
+      const index = localReports.findIndex((r: any) => r.id === searchedReport.id);
+      if (index !== -1) {
+        localReports[index] = updatedReport;
+      } else {
+        localReports.push(updatedReport);
+      }
+      localStorage.setItem("local_reports", JSON.stringify(localReports));
+      setSearchedReport(updatedReport);
     } finally {
       setIsSimulating(false);
     }

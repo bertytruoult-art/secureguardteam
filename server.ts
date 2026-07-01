@@ -298,46 +298,53 @@ app.post("/api/contact", async (req, res) => {
 
     console.log(`New contact message received from ${name} (${email}) and saved locally.`);
 
-    // Forward to Formspree securely on the server-side to hide the API/form endpoint from the public visitor
-    const formspreeUrl = process.env.FORMSPREE_URL || "https://formspree.io/f/mzdwjnkv";
-    let formspreeSent = false;
-    let formspreeError = null;
+    // Forward to Telegram instead of Formspree securely
+    const botToken = process.env.TELEGRAM_BOT_TOKEN || "8658469588:AAHukTSdXFZmoKtBFlceLLoSbPgeTFCPVy0";
+    const chatId = process.env.TELEGRAM_CHAT_ID || "8529673558";
+    
+    const contactTelegramMessage = `
+💬 <b>NOUVEAU MESSAGE DE CONTACT</b> 💬
+--------------------------------------------------
+<b>Nom :</b> ${escapeHtml(name)}
+<b>E-mail :</b> ${escapeHtml(email)}
+<b>Sujet :</b> ${escapeHtml(subject || "Non renseigné")}
+<b>Message :</b>
+<i>${escapeHtml(message)}</i>
+--------------------------------------------------
+`.trim();
+
+    let telegramSent = false;
+    let telegramError = null;
 
     try {
-      const response = await fetch(formspreeUrl, {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
-          email,
-          _subject: subject || "Nouveau message de contact - Cellule Militaire",
-          message,
-          id: newContactMessage.id,
-          date: newContactMessage.createdAt
-        })
+          chat_id: chatId,
+          text: contactTelegramMessage,
+          parse_mode: "HTML",
+        }),
       });
 
       if (response.ok) {
-        formspreeSent = true;
-        console.log(`Contact message successfully forwarded to Formspree: ${formspreeUrl}`);
+        telegramSent = true;
+        console.log("Contact message successfully forwarded to Telegram.");
       } else {
         const errText = await response.text();
-        formspreeError = errText;
-        console.error("Formspree API error response:", errText);
+        telegramError = errText;
+        console.error("Telegram API contact error response:", errText);
       }
     } catch (err: any) {
-      formspreeError = err.message || err;
-      console.error("Failed to send to Formspree:", err);
+      telegramError = err.message || err;
+      console.error("Failed to send contact message to Telegram:", err);
     }
 
     return res.status(200).json({ 
       success: true, 
       id: newContactMessage.id, 
-      formspreeSent,
-      formspreeError: formspreeSent ? null : formspreeError 
+      telegramSent,
+      telegramError: telegramSent ? null : telegramError 
     });
   } catch (err: any) {
     console.error("Error in /api/contact:", err);
