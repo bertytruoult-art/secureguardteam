@@ -158,8 +158,13 @@ export default function App() {
     } catch (err: any) {
       console.error("Auth error:", err);
       let frenchMessage = "Une erreur est survenue lors de l'authentification.";
-      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
-        frenchMessage = "Identifiants invalides. Veuillez vérifier votre adresse e-mail et votre mot de passe.";
+      const isInvalidCred = err.code === "auth/invalid-credential" || 
+                           err.code === "auth/wrong-password" || 
+                           err.code === "auth/user-not-found" ||
+                           (err.message && err.message.includes("invalid-credential"));
+      
+      if (isInvalidCred) {
+        frenchMessage = "Identifiants incorrects ou compte inexistant. Si vous n'avez pas encore de compte, veuillez cliquer sur 'Vous n'avez pas de compte ? Créez-en un ici' ci-dessous pour vous inscrire.";
       } else if (err.code === "auth/email-already-in-use") {
         frenchMessage = "Cette adresse e-mail est déjà associée à un compte.";
       } else if (err.code === "auth/weak-password") {
@@ -960,7 +965,7 @@ export default function App() {
           suspectEmail,
           suspectPlatform,
           suspectAccounts,
-          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type })),
+          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type, content: f.content })),
           userEmail: user?.email || "Anonyme"
         };
 
@@ -1119,7 +1124,7 @@ ${filesList}
           suspectEmail,
           suspectPlatform,
           suspectAccounts,
-          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type })),
+          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type, content: f.content })),
           userEmail: user?.email || "Anonyme"
         };
 
@@ -2482,6 +2487,62 @@ ${filesList}
                       </li>
                     </ul>
                   </div>
+
+                  {/* Summary of attached images and proofs */}
+                  {searchedReport.files && searchedReport.files.length > 0 && (
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 md:col-span-2">
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-b border-slate-800 pb-2">
+                        {lang === "fr" ? "Pièces jointes & Preuves fournies" : "Attached Proofs & Files"}
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        {searchedReport.files.map((file: any, index: number) => {
+                          const isImage = file.type?.startsWith("image/") || (file.content && file.content.startsWith("data:image/"));
+                          return (
+                            <div key={index} className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-col justify-between space-y-3 relative group overflow-hidden hover:border-amber-500/50 transition-all">
+                              {isImage && file.content ? (
+                                <div className="aspect-square w-full rounded-lg overflow-hidden bg-slate-900 flex items-center justify-center relative">
+                                  <img 
+                                    src={file.content} 
+                                    alt={file.name} 
+                                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300" 
+                                    referrerPolicy="no-referrer"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="aspect-square w-full rounded-lg bg-slate-900 border border-slate-850 flex flex-col items-center justify-center p-2 text-center">
+                                  <span className="text-3xl mb-1">📄</span>
+                                  <span className="text-[10px] text-slate-500 font-mono truncate w-full">{file.type || "Document"}</span>
+                                </div>
+                              )}
+                              <div className="space-y-1">
+                                <p className="text-xs text-white font-medium truncate" title={file.name}>
+                                  {file.name}
+                                </p>
+                                <p className="text-[10px] text-slate-500 font-mono">
+                                  {file.size ? `${(file.size / 1024).toFixed(1)} KB` : "Taille inconnue"}
+                                </p>
+                              </div>
+                              {/* Action to open/download */}
+                              {file.content && (
+                                <a 
+                                  href={file.content} 
+                                  download={file.name}
+                                  className="absolute top-2 right-2 p-1.5 bg-slate-900/80 hover:bg-amber-500 hover:text-slate-950 rounded-lg text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-md cursor-pointer flex items-center justify-center"
+                                  title={lang === "fr" ? "Télécharger" : "Download"}
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <polyline points="7 10 12 15 17 10" />
+                                    <line x1="12" y1="15" x2="12" y2="3" />
+                                  </svg>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                 </div>
 

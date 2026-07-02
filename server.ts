@@ -85,7 +85,8 @@ app.post("/api/reports", async (req, res) => {
     const cleanFiles = files ? files.map((f: any) => ({
       name: f.name,
       size: f.size,
-      type: f.type
+      type: f.type,
+      content: f.content
     })) : [];
 
     const newReport = {
