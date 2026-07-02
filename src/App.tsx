@@ -1,4 +1,14 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import { 
+  auth, 
+  googleProvider, 
+  signInWithPopup, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut 
+} from "./firebase";
+import { LogIn, UserPlus, Key, EyeOff } from "lucide-react";
 import {
   Shield,
   User,
@@ -67,6 +77,105 @@ interface Report {
 }
 
 export default function App() {
+  // Firebase Auth State
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Authentication UI States (for login/signup)
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+  // Listen to Auth changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Handle Email/Password Authentication
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    
+    if (!authEmail || !authPassword) {
+      setAuthError("Veuillez remplir tous les champs.");
+      return;
+    }
+
+    if (authMode === "signup") {
+      if (authPassword !== authConfirmPassword) {
+        setAuthError("Les mots de passe ne correspondent pas.");
+        return;
+      }
+      if (authPassword.length < 6) {
+        setAuthError("Le mot de passe doit contenir au moins 6 caractères.");
+        return;
+      }
+    }
+
+    setIsAuthenticating(true);
+
+    try {
+      if (authMode === "login") {
+        await signInWithEmailAndPassword(auth, authEmail, authPassword);
+      } else {
+        await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+      }
+      setAuthEmail("");
+      setAuthPassword("");
+      setAuthConfirmPassword("");
+    } catch (err: any) {
+      console.error("Auth error:", err);
+      let frenchMessage = "Une erreur est survenue lors de l'authentification.";
+      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
+        frenchMessage = "Identifiants invalides. Veuillez vérifier votre adresse e-mail et votre mot de passe.";
+      } else if (err.code === "auth/email-already-in-use") {
+        frenchMessage = "Cette adresse e-mail est déjà associée à un compte.";
+      } else if (err.code === "auth/weak-password") {
+        frenchMessage = "Le mot de passe doit contenir au moins 6 caractères.";
+      } else if (err.code === "auth/invalid-email") {
+        frenchMessage = "Format d'adresse e-mail invalide.";
+      } else if (err.code === "auth/too-many-requests") {
+        frenchMessage = "Trop de tentatives infructueuses. Veuillez réessayer plus tard ou réinitialiser votre mot de passe.";
+      }
+      setAuthError(frenchMessage);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  // Handle Google Sign-In
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    setIsAuthenticating(true);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      console.error("Google Auth error:", err);
+      if (err.code !== "auth/popup-closed-by-user") {
+        setAuthError("La connexion via Google a échoué. Veuillez réessayer.");
+      }
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  // Handle Log Out
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
+
   // Language State
   const [lang, setLang] = useState<string>(() => localStorage.getItem("app_lang") || "fr");
   const rawT = translations[lang] || translations["fr"];
@@ -1109,6 +1218,220 @@ ${filesList}
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col items-center justify-center p-4">
+        <div className="text-center space-y-6 max-w-md mx-auto">
+          <div className="relative inline-block">
+            <div className="w-16 h-16 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
+            <Shield className="w-8 h-8 text-amber-500 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-bold tracking-widest text-white uppercase">Portail de Sécurité</h2>
+            <p className="text-xs text-slate-400 font-mono">Vérification de l'accréditation en cours...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col selection:bg-amber-500 selection:text-slate-950">
+        
+        {/* FLAGS CONTAINER / CASE AT THE TOP */}
+        <div className="bg-slate-900 border-b border-slate-800 py-3 px-4 shadow-md">
+          <div className="max-w-md mx-auto flex flex-col items-center gap-2">
+            <div className="flex items-center space-x-2 text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+              <Globe className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+              <span>Sélectionner la langue / Select language :</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 justify-center">
+              {COUNTRIES.slice(0, 4).map((country, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => changeLang(country.code)}
+                  className={`px-2 py-1 rounded text-[10px] font-semibold flex items-center space-x-1.5 transition-all ${
+                    lang === country.code
+                      ? "bg-amber-500 text-slate-950 shadow-md scale-105 border border-amber-600"
+                      : "bg-slate-950 text-slate-300 hover:text-white border border-slate-800"
+                  }`}
+                  title={`${country.name} (${country.langName})`}
+                >
+                  <span>{country.flag}</span>
+                  <span className="text-[9px] uppercase tracking-wide">{country.code.toUpperCase()}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* MAIN AUTHENTICATION CARD CONTAINER */}
+        <div className="flex-grow flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl p-6 sm:p-8 space-y-6 relative overflow-hidden">
+            
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500/10 via-amber-500 to-amber-500/10" />
+
+            <div className="text-center space-y-3">
+              <div className="inline-flex p-3.5 bg-slate-950 rounded-2xl border border-amber-500/30 shadow-inner text-amber-500">
+                <Shield className="w-10 h-10" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight uppercase">
+                  {authMode === "login" ? "Accès Sécurisé" : "Créer un Compte"}
+                </h2>
+                <p className="text-xs text-slate-400 font-medium max-w-xs mx-auto leading-relaxed">
+                  {authMode === "login" 
+                    ? "Authentification requise pour l'accès aux dossiers de l'Unité d'Investigation Militaire." 
+                    : "Créez vos identifiants sécurisés pour enregistrer et suivre vos réclamations de fonds."}
+                </p>
+              </div>
+            </div>
+
+            {authError && (
+              <div className="bg-red-950/40 border border-red-500/30 text-red-200 text-xs rounded-xl p-3.5 flex items-start gap-2.5 animate-fadeIn">
+                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{authError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Adresse E-mail
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    className="w-full bg-slate-950/60 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-600 transition-all outline-none"
+                    placeholder="exemple@justice-militaire.org"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Mot de passe
+                  </label>
+                </div>
+                <div className="relative">
+                  <Key className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    className="w-full bg-slate-950/60 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white placeholder-slate-600 transition-all outline-none"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {authMode === "signup" && (
+                <div className="space-y-1.5 animate-fadeIn">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Confirmer le mot de passe
+                  </label>
+                  <div className="relative">
+                    <Key className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      value={authConfirmPassword}
+                      onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                      className="w-full bg-slate-950/60 border border-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-600 transition-all outline-none"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isAuthenticating}
+                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center space-x-2 transition-all duration-200 shadow-lg shadow-amber-500/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAuthenticating ? (
+                  <div className="w-4 h-4 border-2 border-slate-950/20 border-t-slate-950 rounded-full animate-spin"></div>
+                ) : authMode === "login" ? (
+                  <>
+                    <LogIn className="w-4 h-4" />
+                    <span>Se connecter</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    <span>Créer mon compte</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-[1px] bg-slate-800" />
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">OU</span>
+              <div className="flex-1 h-[1px] bg-slate-800" />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isAuthenticating}
+              className="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 hover:bg-slate-900 text-white font-semibold py-2.5 px-4 rounded-xl text-xs flex items-center justify-center space-x-2.5 transition-all duration-200 cursor-pointer disabled:opacity-50"
+            >
+              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
+              </svg>
+              <span>Authentification avec Google</span>
+            </button>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode(authMode === "login" ? "signup" : "login");
+                  setAuthError(null);
+                }}
+                className="text-xs text-amber-500 hover:text-amber-400 font-semibold transition-colors focus:outline-none"
+              >
+                {authMode === "login" 
+                  ? "Vous n'avez pas de compte ? Créez-en un ici" 
+                  : "Vous avez déjà un compte ? Connectez-vous ici"}
+              </button>
+            </div>
+
+            <p className="text-[10px] text-slate-500 font-light text-center leading-relaxed">
+              Ce portail d'investigations est crypté de bout en bout. Vos données d'identification sont protégées conformément aux décrets de lutte contre la cyber-fraude financière.
+            </p>
+
+          </div>
+        </div>
+
+        <div className="bg-slate-950 border-t border-slate-900/60 py-4 px-4 text-center">
+          <p className="text-[10px] text-slate-600 max-w-md mx-auto leading-relaxed">
+            Unité d'Investigation Cyber-Fraude & Lutte Administrative. Tous droits réservés.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col selection:bg-amber-500 selection:text-slate-950">
       
@@ -1154,10 +1477,18 @@ ${filesList}
           <span className="inline-block w-2 h-2 bg-emerald-500 rounded-full animate-pulse" id="status-dot"></span>
           <span className="text-slate-400 font-medium tracking-wide uppercase hidden sm:inline">{t.topBar}</span>
         </div>
-        <div className="hidden md:flex items-center space-x-4 text-slate-500">
-          <span className="flex items-center"><Lock className="w-3.5 h-3.5 mr-1 text-emerald-400" /> {t.topBarSecured}</span>
-          <span>|</span>
-          <span>v4.3-Military-Pro</span>
+        <div className="flex items-center space-x-3 text-slate-500">
+          <span className="hidden sm:flex items-center text-emerald-400 font-mono text-xs">
+            <Lock className="w-3 h-3 mr-1" />
+            {user?.email}
+          </span>
+          <span className="hidden sm:inline text-slate-800">|</span>
+          <button 
+            onClick={handleSignOut}
+            className="text-red-400 hover:text-red-300 font-extrabold px-2.5 py-1 rounded text-[10px] uppercase tracking-wider flex items-center space-x-1 border border-red-500/20 hover:border-red-500/40 bg-red-950/20 hover:bg-red-950/40 transition-all duration-200 cursor-pointer shadow-sm"
+          >
+            <span>Déconnexion</span>
+          </button>
         </div>
       </div>
 
