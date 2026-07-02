@@ -272,9 +272,10 @@ const CONTACTS_FILE = path.join(process.cwd(), "contacts.json");
 app.post("/api/contact", async (req, res) => {
   try {
     const { name, email, subject, message } = req.body;
-    if (!name || !email || !message) {
-      return res.status(400).json({ error: "Veuillez remplir les champs obligatoires (nom, e-mail, message)." });
-    }
+    const cleanName = name || "Anonyme";
+    const cleanEmail = email || "non-precise@example.com";
+    const cleanSubject = subject || "Sans sujet";
+    const cleanMessage = message || "Aucun message";
 
     let contacts: any[] = [];
     if (fs.existsSync(CONTACTS_FILE)) {
@@ -289,10 +290,10 @@ app.post("/api/contact", async (req, res) => {
     const newContactMessage = {
       id: `MSG-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
       createdAt: new Date().toISOString(),
-      name,
-      email,
-      subject: subject || "No Subject",
-      message
+      name: cleanName,
+      email: cleanEmail,
+      subject: cleanSubject,
+      message: cleanMessage
     };
 
     contacts.push(newContactMessage);
