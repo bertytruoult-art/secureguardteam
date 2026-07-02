@@ -8,7 +8,7 @@ import {
   createUserWithEmailAndPassword, 
   signOut 
 } from "./firebase";
-import { LogIn, UserPlus, Key, EyeOff } from "lucide-react";
+import { LogIn, UserPlus, Key, EyeOff, History } from "lucide-react";
 import {
   Shield,
   User,
@@ -744,8 +744,9 @@ export default function App() {
   };
 
   // Navigation & UI States
-  const [activeTab, setActiveTab] = useState<"home" | "report" | "track">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "report" | "track" | "history">("home");
   const [successReportId, setSuccessReportId] = useState<string | null>(null);
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
 
   // Form State
   const [victimName, setVictimName] = useState("");
@@ -887,7 +888,8 @@ export default function App() {
           suspectEmail,
           suspectPlatform,
           suspectAccounts,
-          files: attachedFiles
+          files: attachedFiles,
+          userEmail: user?.email || "Anonyme"
         })
       });
 
@@ -901,6 +903,43 @@ export default function App() {
 
       if (response.ok) {
         isServerSuccess = true;
+
+        // Cache the newly created report in browser local storage as well with userEmail
+        const reportId = data.reportId;
+        const newReport = {
+          id: reportId,
+          createdAt: new Date().toISOString(),
+          status: "received",
+          statusHistory: [
+            {
+              status: "received",
+              label: "Dossier Reçu et Enregistré",
+              timestamp: new Date().toISOString(),
+              description: "Le dossier a été enregistré avec succès dans la base de données de l'unité d'investigation militaire cyber-fraude."
+            }
+          ],
+          victimName: victimName || "Anonyme",
+          victimPhone,
+          victimEmail,
+          victimCountry,
+          scamCategory: scamCategory || "Non spécifiée",
+          scamDate,
+          amount: amount || "Non spécifié",
+          currency,
+          description: description || "Aucun récit de fait fourni.",
+          suspectName,
+          suspectPhone,
+          suspectEmail,
+          suspectPlatform,
+          suspectAccounts,
+          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type })),
+          userEmail: user?.email || "Anonyme"
+        };
+
+        const localReportsStr = localStorage.getItem("local_reports") || "[]";
+        const localReports = JSON.parse(localReportsStr);
+        localReports.push(newReport);
+        localStorage.setItem("local_reports", JSON.stringify(localReports));
       } else {
         throw new Error(data.error || `Erreur serveur (Status: ${response.status})`);
       }
@@ -1052,7 +1091,8 @@ ${filesList}
           suspectEmail,
           suspectPlatform,
           suspectAccounts,
-          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type }))
+          files: attachedFiles.map((f: any) => ({ name: f.name, size: f.size, type: f.type })),
+          userEmail: user?.email || "Anonyme"
         };
 
         const localReportsStr = localStorage.getItem("local_reports") || "[]";
@@ -1111,6 +1151,10 @@ ${filesList}
       
       if (response.ok) {
         const data = await response.json();
+        // Secure check for backend reports
+        if (data.userEmail && data.userEmail !== user?.email) {
+          throw new Error("Ce dossier appartient à un autre compte ou vous n'avez pas l'autorisation de le consulter.");
+        }
         setSearchedReport(data);
       } else {
         // Fallback to localStorage
@@ -1118,6 +1162,10 @@ ${filesList}
         const localReports = JSON.parse(localReportsStr);
         const report = localReports.find((r: any) => r.id === idToSearch.trim());
         if (report) {
+          // Secure check for local reports
+          if (report.userEmail && report.userEmail !== user?.email) {
+            throw new Error("Ce dossier appartient à un autre compte ou vous n'avez pas l'autorisation de le consulter.");
+          }
           setSearchedReport(report);
         } else {
           throw new Error("Numéro de dossier introuvable.");
@@ -1129,9 +1177,13 @@ ${filesList}
       const localReports = JSON.parse(localReportsStr);
       const report = localReports.find((r: any) => r.id === idToSearch.trim());
       if (report) {
-        setSearchedReport(report);
+        if (report.userEmail && report.userEmail !== user?.email) {
+          setSearchError("Ce dossier appartient à un autre compte ou vous n'avez pas l'autorisation de le consulter.");
+        } else {
+          setSearchedReport(report);
+        }
       } else {
-        setSearchError("Numéro de dossier introuvable ou service de recherche indisponible.");
+        setSearchError(err.message || "Numéro de dossier introuvable ou service de recherche indisponible.");
       }
     } finally {
       setIsSearching(false);
@@ -1552,6 +1604,18 @@ ${filesList}
             >
               <Search className="w-4 h-4" />
               <span>{t.tabTrack}</span>
+            </button>
+            <button
+              id="tab-history-btn"
+              onClick={() => { setActiveTab("history"); }}
+              className={`flex-1 md:flex-initial px-4 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 flex items-center justify-center space-x-2 ${
+                activeTab === "history"
+                  ? "bg-amber-500 text-slate-950 shadow-lg"
+                  : "text-slate-300 hover:text-white hover:bg-slate-800"
+              }`}
+            >
+              <History className="w-4 h-4" />
+              <span>{lang === "fr" ? "Mes Dossiers" : "My Cases"}</span>
             </button>
           </nav>
 
@@ -2373,6 +2437,276 @@ ${filesList}
                 </div>
               </div>
             )}
+
+          </div>
+        )}
+
+        {/* TAB 4: MY HISTORY PANEL */}
+        {activeTab === "history" && (
+          <div className="animate-fadeIn max-w-5xl mx-auto space-y-6" id="history-panel">
+            
+            {/* Header Section */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center space-x-2.5">
+                    <History className="w-6 h-6 text-amber-500" />
+                    <span>{lang === "fr" ? "Historique des Signalements" : "Case History"}</span>
+                  </h2>
+                  <p className="text-slate-400 text-xs sm:text-sm font-light mt-1">
+                    {lang === "fr" 
+                      ? "Consultez l'état d'avancement et gérez l'ensemble de vos dossiers enregistrés." 
+                      : "Review progress and manage all your registered investigation files."}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveTab("report")}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs sm:text-sm uppercase tracking-wider flex items-center space-x-2 transition-all cursor-pointer shadow-md shadow-amber-500/15"
+                >
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>{lang === "fr" ? "Nouveau Signalement" : "File New Report"}</span>
+                </button>
+              </div>
+
+              {/* Quick stats mini-grid */}
+              {(() => {
+                const localReportsStr = localStorage.getItem("local_reports") || "[]";
+                let allReports = [];
+                try {
+                  allReports = JSON.parse(localReportsStr);
+                } catch (e) {
+                  console.error(e);
+                }
+                const userReports = allReports.filter((r: any) => r.userEmail === user?.email);
+
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-800">
+                    <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                      <div className="text-slate-400 text-[11px] uppercase tracking-wider font-semibold">{lang === "fr" ? "Dossiers Soumis" : "Total Filed"}</div>
+                      <div className="text-2xl font-black text-amber-500 mt-1">{userReports.length}</div>
+                    </div>
+                    <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                      <div className="text-slate-400 text-[11px] uppercase tracking-wider font-semibold">{lang === "fr" ? "Fonds Déclarés" : "Reported Loss"}</div>
+                      <div className="text-2xl font-black text-white mt-1">
+                        {(() => {
+                          const totals: Record<string, number> = {};
+                          userReports.forEach((r: any) => {
+                            const val = parseFloat(r.amount);
+                            if (!isNaN(val)) {
+                              const curr = r.currency || "EUR";
+                              totals[curr] = (totals[curr] || 0) + val;
+                            }
+                          });
+                          const keys = Object.keys(totals);
+                          if (keys.length === 0) return "0.00 EUR";
+                          return keys.map(k => `${totals[k].toLocaleString()} ${k}`).join(" / ");
+                        })()}
+                      </div>
+                    </div>
+                    <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+                      <div className="text-slate-400 text-[11px] uppercase tracking-wider font-semibold">{lang === "fr" ? "Dernière Activité" : "Last Activity"}</div>
+                      <div className="text-sm font-semibold text-emerald-400 mt-2">
+                        {userReports.length > 0 
+                          ? new Date(userReports[userReports.length - 1].createdAt).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", { day: "numeric", month: "short", year: "numeric" }) 
+                          : lang === "fr" ? "Aucune activité" : "No active cases"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Search Bar for history */}
+            {(() => {
+              const localReportsStr = localStorage.getItem("local_reports") || "[]";
+              let allReports = [];
+              try {
+                allReports = JSON.parse(localReportsStr);
+              } catch (e) {
+                console.error(e);
+              }
+              const userReports = allReports.filter((r: any) => r.userEmail === user?.email);
+
+              if (userReports.length === 0) return null;
+
+              return (
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder={lang === "fr" ? "Rechercher par numéro de dossier, suspect, type d'arnaque..." : "Search by case ID, suspect, scam category..."}
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition-colors"
+                  />
+                  {historySearchQuery && (
+                    <button 
+                      onClick={() => setHistorySearchQuery("")}
+                      className="absolute right-3 top-3 p-1 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Case list or Empty State */}
+            {(() => {
+              const localReportsStr = localStorage.getItem("local_reports") || "[]";
+              let allReports = [];
+              try {
+                allReports = JSON.parse(localReportsStr);
+              } catch (e) {
+                console.error(e);
+              }
+              const userReports = allReports.filter((r: any) => r.userEmail === user?.email);
+
+              const query = historySearchQuery.toLowerCase().trim();
+              const filteredReports = userReports.filter((r: any) => {
+                if (!query) return true;
+                return (
+                  r.id.toLowerCase().includes(query) ||
+                  (r.suspectName && r.suspectName.toLowerCase().includes(query)) ||
+                  (r.scamCategory && r.scamCategory.toLowerCase().includes(query)) ||
+                  (r.victimName && r.victimName.toLowerCase().includes(query)) ||
+                  (r.description && r.description.toLowerCase().includes(query))
+                );
+              });
+
+              if (userReports.length === 0) {
+                return (
+                  <div className="bg-slate-900 border border-slate-850 rounded-2xl p-12 text-center space-y-4">
+                    <div className="mx-auto w-16 h-16 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-center text-slate-600">
+                      <History className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-base font-bold text-slate-200">
+                        {lang === "fr" ? "Aucun dossier enregistré" : "No cases registered yet"}
+                      </h4>
+                      <p className="text-xs sm:text-sm text-slate-400 font-light max-w-md mx-auto leading-relaxed">
+                        {lang === "fr" 
+                          ? "Vous n'avez pas encore déposé de signalement. Les signalements soumis avec ce compte apparaîtront ici de manière sécurisée." 
+                          : "Submit a military cyber-fraud report to have it securely tracked inside your personal dashboard."}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab("report")}
+                      className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all inline-flex items-center space-x-2 cursor-pointer"
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>{lang === "fr" ? "Déposer un signalement" : "File a Report Now"}</span>
+                    </button>
+                  </div>
+                );
+              }
+
+              if (filteredReports.length === 0) {
+                return (
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-2xl p-8 text-center text-slate-400 text-sm">
+                    {lang === "fr" 
+                      ? "Aucun dossier ne correspond à votre recherche." 
+                      : "No dossiers match your search query."}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-4">
+                  {filteredReports.map((report: any) => {
+                    // Get status badge styles
+                    let statusColor = "bg-slate-800/40 border-slate-700 text-slate-300";
+                    let statusText = report.status;
+                    
+                    if (report.status === "received") {
+                      statusColor = "bg-slate-800/60 border-slate-700 text-slate-300";
+                      statusText = lang === "fr" ? "Dossier Reçu" : "Received";
+                    } else if (report.status === "analyzing") {
+                      statusColor = "bg-blue-500/10 border-blue-500/20 text-blue-400";
+                      statusText = lang === "fr" ? "Analyse en cours" : "Under Analysis";
+                    } else if (report.status === "investigation_launched") {
+                      statusColor = "bg-amber-500/10 border-amber-500/20 text-amber-400";
+                      statusText = lang === "fr" ? "Enquête Lancée" : "Investigation Active";
+                    } else if (report.status === "active_tracking") {
+                      statusColor = "bg-fuchsia-500/10 border-fuchsia-500/20 text-fuchsia-400";
+                      statusText = lang === "fr" ? "Traçage de Fonds" : "Fund Tracking";
+                    } else if (report.status === "resolved") {
+                      statusColor = "bg-emerald-500/10 border-emerald-500/20 text-emerald-400";
+                      statusText = lang === "fr" ? "Résolu / Remboursement" : "Resolved / Secured";
+                    }
+
+                    return (
+                      <div 
+                        key={report.id}
+                        className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700 transition-all duration-200"
+                      >
+                        <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-mono text-sm font-extrabold text-amber-500 select-all">{report.id}</span>
+                              <span className="text-slate-600">|</span>
+                              <span className={`text-[10px] sm:text-xs font-bold uppercase px-2.5 py-0.5 rounded border ${statusColor}`}>
+                                {statusText}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                {new Date(report.createdAt).toLocaleDateString(lang === "fr" ? "fr-FR" : "en-US", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
+                            <h4 className="text-sm sm:text-base font-bold text-white leading-snug">
+                              {report.scamCategory}
+                            </h4>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 font-light">
+                              <div>
+                                <span className="font-semibold text-slate-300">{lang === "fr" ? "Montant dérobé : " : "Loss : "}</span>
+                                <span className="font-mono text-amber-400 font-medium">{parseFloat(report.amount).toLocaleString()} {report.currency}</span>
+                              </div>
+                              {report.suspectName && (
+                                <div>
+                                  <span className="font-semibold text-slate-300">{lang === "fr" ? "Suspect : " : "Suspect : "}</span>
+                                  <span>{report.suspectName}</span>
+                                </div>
+                              )}
+                              <div>
+                                <span className="font-semibold text-slate-300">{lang === "fr" ? "Preuves : " : "Proofs : "}</span>
+                                <span>{report.files ? report.files.length : 0} {lang === "fr" ? "fichier(s)" : "file(s)"}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end lg:self-center">
+                            <button
+                              onClick={() => {
+                                setSearchId(report.id);
+                                setActiveTab("track");
+                                handleTrackReport(null, report.id);
+                              }}
+                              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs uppercase flex items-center space-x-1.5 transition-colors cursor-pointer"
+                            >
+                              <Search className="w-3.5 h-3.5" />
+                              <span>{lang === "fr" ? "Suivre l'enquête" : "Track Inquiry"}</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(lang === "fr" ? "Êtes-vous sûr de vouloir supprimer ce dossier de votre historique local ?" : "Are you sure you want to remove this case from your local history?")) {
+                                  const filtered = allReports.filter((r: any) => r.id !== report.id);
+                                  localStorage.setItem("local_reports", JSON.stringify(filtered));
+                                  // Trigger tab reset to force a component updates
+                                  setActiveTab("history");
+                                }
+                              }}
+                              title={lang === "fr" ? "Supprimer de l'historique" : "Remove from history"}
+                              className="p-1.5 bg-slate-950 border border-slate-800 text-rose-400 hover:text-rose-300 rounded-lg hover:border-rose-500/30 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
           </div>
         )}

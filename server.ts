@@ -69,6 +69,7 @@ app.post("/api/reports", async (req, res) => {
       suspectPlatform,
       suspectAccounts,
       files, // Array of { name, size, type }
+      userEmail,
     } = req.body;
 
     // Validate fields - We removed hard requirements per user request
@@ -114,6 +115,7 @@ app.post("/api/reports", async (req, res) => {
       suspectPlatform,
       suspectAccounts,
       files: cleanFiles,
+      userEmail: userEmail || "Anonyme",
     };
 
     // Save report locally
